@@ -54,6 +54,7 @@ Nothing proprietary is committed here. CI fetches:
 | Loongnix Rust 1.99.0 host (`x86_64-unknown-linux-gnu`) | https://rust-lang.loongnix.cn/dist/1.99.0/2026-10-09/rust-1.99.0-x86_64-unknown-linux-gnu.tar.xz |
 | matching `rust-std` for `loongarch64-unknown-linux-gnu` (old-world) | https://rust-lang.loongnix.cn/dist/1.99.0/2026-10-09/rust-std-1.99.0-loongarch64-unknown-linux-gnu.tar.xz |
 | OpenSSL 1.1.1d headers + `libssl1.1` (Loongnix) | `libssl-dev` / `libssl1.1` `1.1.1d-0+lnd.13` from https://pkg.loongnix.cn/loongnix/pool/main/o/openssl/ |
+| Official `cargo` 1.99.0 (no crates.io rewrite) | https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz |
 
 Official `rustup` `loongarch64-unknown-linux-gnu` std is the **new-world** ABI (interpreter `/lib64/ld-linux-loongarch-lp64d.so.1`). That binary will not run on Kylin V10 SP1, so this project uses Loongnix's Rust and the Loongson GCC 8.3 sysroot instead.
 
@@ -66,6 +67,7 @@ These are encoded in `scripts/build.sh` and `scripts/fetch-toolchains.sh`:
 1. **Host `rust-lld` SIGSEGV.** Cross compilation still builds host `build.rs` and proc-macros. Rust 1.99 passes `-fuse-ld=lld`, and the bundled `rust-lld` segfaulted on the original Debian host. A small `cc`/`c++` wrapper drops `-fuse-ld=lld`/`mold` so host links use system `ld.bfd`.
 2. **`relocation truncated to fit` (aws-lc-sys → `memcpy`).** The release binary is too large for the default LoongArch code model. Loongson GCC 8.3 accepts `tiny` / `normal` / `large` / `extreme` (not `medium`). The build sets `-mcmodel=large` on target C/C++ flags and `-C code-model=large` on `RUSTFLAGS`. After changing the model, rebuild `ring` / `aws-lc-sys`; a relink alone is not enough.
 3. **Resource use.** LTO is off, `codegen-units = 16`, `debug = 0`, cargo incremental off, `-j2`. The successful Debian run needed several gigabytes of RAM plus swap.
+4. **Loongnix cargo rewrites crates.io.** Since Rust 1.63, Loongnix `cargo` hardcodes `replace-with = "crates-io-loongnix"` (`https://crates.loongnix.cn/crates.io-index`) in the binary itself, so commenting out `~/.cargo/config.toml` has no effect. That index can lag official crates.io (it was missing `rustls` 0.23.46) and git-fetch from it can EOF on GitHub-hosted runners. By default the scripts install official `cargo` 1.99.0 from `static.rust-lang.org` into the toolchain `hostbin` (first on `PATH`) and keep Loongnix `rustc` plus the old-world `rust-std`. Pointing a second cargo source at the official crates.io URL does not work: cargo rejects it as "source already defined by crates-io". Set `USE_LOONGNIX_CRATES=1` if you want the Loongnix mirror, typically on a machine in China.
 
 Verification (`scripts/verify-elf.sh`) requires:
 
@@ -79,6 +81,7 @@ On an x86_64 Linux machine with `build-essential`, `cmake`, `perl`, `curl`, `git
 
 ```bash
 export CODEX_VERSION=0.167.0
+# Optional, for a host in China: export USE_LOONGNIX_CRATES=1
 ./scripts/fetch-toolchains.sh
 ./scripts/build.sh
 CODEX_BIN=work/target/loongarch64-unknown-linux-gnu/release/codex ./scripts/package.sh

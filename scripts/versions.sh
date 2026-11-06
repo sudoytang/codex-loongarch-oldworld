@@ -13,6 +13,7 @@ RUST_STD_URL="${RUST_STD_URL:-https://rust-lang.loongnix.cn/dist/${RUST_VER}/${R
 GCC_URL="${GCC_URL:-https://ftp.loongnix.cn/toolchain/gcc/release/loongarch/gcc8/${GCC_NAME}.tar.xz}"
 OSSL_DEV_URL="${OSSL_DEV_URL:-https://pkg.loongnix.cn/loongnix/pool/main/o/openssl/libssl-dev_${OSSL_DEB_VER}_loongarch64.deb}"
 OSSL_LIB_URL="${OSSL_LIB_URL:-https://pkg.loongnix.cn/loongnix/pool/main/o/openssl/libssl1.1_${OSSL_DEB_VER}_loongarch64.deb}"
+OFFICIAL_CARGO_URL="${OFFICIAL_CARGO_URL:-https://static.rust-lang.org/dist/cargo-${RUST_VER}-x86_64-unknown-linux-gnu.tar.xz}"
 
 normalize_codex_version() {
   local raw="${1:?version required}"

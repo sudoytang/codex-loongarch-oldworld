@@ -116,9 +116,15 @@ exec /usr/bin/c++ "${args[@]}"
 W
 chmod +x "$WRAP/cc" "$WRAP/c++"
 
-# Loongnix's cargo often rewrites crates.io to crates-io-loongnix, which
-# can lag official crates (CI failed on rustls 0.23.46). Use crates.io.
-neutralize_registry_rewrites() {
+# Loongnix cargo 1.63+ hardcodes [source.crates-io] replace-with =
+# "crates-io-loongnix" (https://crates.loongnix.cn/crates.io-index) inside
+# the cargo binary. Commenting out config.toml does nothing: there is no
+# such file. That mirror can lag official crates.io (rustls 0.23.46 was
+# missing) and its git index can EOF from GitHub-hosted runners.
+# Default: put upstream cargo of the same version first on PATH and keep
+# Loongnix rustc + old-world rust-std. Set USE_LOONGNIX_CRATES=1 to keep
+# the baked-in mirror (useful on a host in China).
+comment_out_registry_rewrites() {
   local f
   while IFS= read -r f; do
     [ -f "$f" ] || continue
@@ -129,6 +135,28 @@ neutralize_registry_rewrites() {
   done < <(find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" \
             -type f \( -name config -o -name config.toml \) 2>/dev/null)
 }
-neutralize_registry_rewrites
+
+if [ "${USE_LOONGNIX_CRATES:-0}" = "1" ]; then
+  echo "==> USE_LOONGNIX_CRATES=1: leaving Loongnix cargo's crates.io mirror enabled"
+else
+  comment_out_registry_rewrites
+  if [ ! -x "$PREFIX/hostbin/cargo" ] || grep -aFq 'crates-io-loongnix' "$PREFIX/hostbin/cargo"; then
+    download "$OFFICIAL_CARGO_URL" "$DL/official-cargo-${RUST_VER}-x86_64-unknown-linux-gnu.tar.xz"
+    echo "==> installing official cargo ${RUST_VER} (no crates-io-loongnix rewrite)"
+    rm -rf "$PREFIX/official-cargo-extract"
+    mkdir -p "$PREFIX/official-cargo-extract"
+    tar -C "$PREFIX/official-cargo-extract" -xf "$DL/official-cargo-${RUST_VER}-x86_64-unknown-linux-gnu.tar.xz"
+    official_cargo="$(find "$PREFIX/official-cargo-extract" -type f -path '*/bin/cargo' | head -1)"
+    [ -n "$official_cargo" ]
+    cp "$official_cargo" "$PREFIX/hostbin/cargo"
+    chmod +x "$PREFIX/hostbin/cargo"
+    rm -rf "$PREFIX/official-cargo-extract"
+  fi
+  if grep -aFq 'crates-io-loongnix' "$PREFIX/hostbin/cargo"; then
+    echo "refusing to use cargo that still embeds crates-io-loongnix: $PREFIX/hostbin/cargo" >&2
+    exit 1
+  fi
+  "$PREFIX/hostbin/cargo" --version
+fi
 
 echo "TOOLCHAINS_OK prefix=$PREFIX"

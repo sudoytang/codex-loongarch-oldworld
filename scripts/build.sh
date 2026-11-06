@@ -71,23 +71,31 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/work/target}"
 export CARGO_NET_GIT_FETCH_WITH_CLI="${CARGO_NET_GIT_FETCH_WITH_CLI:-true}"
 
 cd "$SRC"
-# Loongnix cargo may rewrite crates.io to crates-io-loongnix (missing
-# crates such as rustls 0.23.46). Comment out replace-with; do not add
-# another source pointing at crates.io (cargo forbids that duplicate).
-while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  if grep -Eq 'replace-with|crates-io-loongnix|rsproxy|ustc.edu.cn' "$f"; then
-    echo "==> neutralizing crate-registry rewrite in $f"
-    sed -i -E 's/^([[:space:]]*replace-with[[:space:]]*=.*)/# \1/' "$f"
+if [ "${USE_LOONGNIX_CRATES:-0}" = "1" ]; then
+  echo "==> USE_LOONGNIX_CRATES=1: using whatever crates.io replacement cargo ships with"
+else
+  # File-based rewrites only. Loongnix cargo also hardcodes crates-io-loongnix
+  # in the binary; fetch-toolchains.sh installs official cargo into hostbin
+  # to avoid that. Do not define a second source with the official crates.io
+  # URL — cargo errors with "source already defined by crates-io".
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    if grep -Eq 'replace-with|crates-io-loongnix|rsproxy|ustc.edu.cn' "$f"; then
+      echo "==> neutralizing crate-registry rewrite in $f"
+      sed -i -E 's/^([[:space:]]*replace-with[[:space:]]*=.*)/# \1/' "$f"
+    fi
+  done < <(find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" \
+            -type f \( -name config -o -name config.toml \) 2>/dev/null)
+  cargo_bin="$(command -v cargo)"
+  if [ -z "$cargo_bin" ] || grep -aFq 'crates-io-loongnix' "$cargo_bin"; then
+    echo "cargo at ${cargo_bin:-<missing>} still embeds crates-io-loongnix." >&2
+    echo "Install official cargo via fetch-toolchains.sh, or set USE_LOONGNIX_CRATES=1." >&2
+    exit 1
   fi
-done < <(find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" \
-          -type f \( -name config -o -name config.toml \) 2>/dev/null)
+fi
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
-echo "==> cargo config files after neutralize:"
-find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" -type f \
-  \( -name config -o -name config.toml \) -print 2>/dev/null || true
 
-echo "==> rustc $(rustc --version)  cargo $(cargo --version)"
+echo "==> rustc $(rustc --version)  cargo $(command -v cargo) $(cargo --version)"
 echo "==> building $CODEX_TAG with -j${JOBS}"
 date -u
 time cargo build --release -p codex-cli --bin codex \
