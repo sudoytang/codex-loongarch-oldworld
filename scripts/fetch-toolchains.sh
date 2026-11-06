@@ -120,19 +120,14 @@ chmod +x "$WRAP/cc" "$WRAP/c++"
 # can lag official crates (CI failed on rustls 0.23.46). Use crates.io.
 neutralize_registry_rewrites() {
   local f
-  for f in \
-      "${CARGO_HOME:-$HOME/.cargo}/config.toml" \
-      "${CARGO_HOME:-$HOME/.cargo}/config" \
-      "$HOME/.cargo/config.toml" \
-      "$HOME/.cargo/config" \
-      "$PREFIX/rust/.cargo/config.toml" \
-      "$PREFIX/rust/.cargo/config"; do
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     if grep -Eq 'replace-with|crates-io-loongnix|rsproxy|ustc.edu.cn' "$f"; then
       echo "==> neutralizing crate-registry rewrite in $f"
       sed -i -E 's/^([[:space:]]*replace-with[[:space:]]*=.*)/# \1/' "$f"
     fi
-  done
+  done < <(find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" \
+            -type f \( -name config -o -name config.toml \) 2>/dev/null)
 }
 neutralize_registry_rewrites
 

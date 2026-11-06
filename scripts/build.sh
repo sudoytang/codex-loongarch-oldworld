@@ -71,29 +71,21 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/work/target}"
 export CARGO_NET_GIT_FETCH_WITH_CLI="${CARGO_NET_GIT_FETCH_WITH_CLI:-true}"
 
 cd "$SRC"
-# See fetch-toolchains.sh: drop Loongnix crates.io replacement if cargo
-# created or inherited one after install.
-for f in "${CARGO_HOME:-$HOME/.cargo}/config.toml" "${CARGO_HOME:-$HOME/.cargo}/config"; do
-  if [ -f "$f" ] && grep -Eq 'replace-with|crates-io-loongnix' "$f"; then
+# Loongnix cargo may rewrite crates.io to crates-io-loongnix (missing
+# crates such as rustls 0.23.46). Comment out replace-with; do not add
+# another source pointing at crates.io (cargo forbids that duplicate).
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  if grep -Eq 'replace-with|crates-io-loongnix|rsproxy|ustc.edu.cn' "$f"; then
     echo "==> neutralizing crate-registry rewrite in $f"
     sed -i -E 's/^([[:space:]]*replace-with[[:space:]]*=.*)/# \1/' "$f"
   fi
-done
+done < <(find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" \
+          -type f \( -name config -o -name config.toml \) 2>/dev/null)
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
-
-# Project-level override in case cargo was built with a default mirror.
-mkdir -p "$SRC/.cargo"
-if ! grep -q 'source.upstream-crates-io' "$SRC/.cargo/config.toml" 2>/dev/null; then
-  cat >> "$SRC/.cargo/config.toml" << 'CARGOCFG'
-
-# Added by codex-loongarch-oldworld CI to use official crates.io.
-[source.crates-io]
-replace-with = "upstream-crates-io"
-
-[source.upstream-crates-io]
-registry = "sparse+https://index.crates.io/"
-CARGOCFG
-fi
+echo "==> cargo config files after neutralize:"
+find "${CARGO_HOME:-$HOME/.cargo}" "$HOME/.cargo" "$PREFIX" -type f \
+  \( -name config -o -name config.toml \) -print 2>/dev/null || true
 
 echo "==> rustc $(rustc --version)  cargo $(cargo --version)"
 echo "==> building $CODEX_TAG with -j${JOBS}"
