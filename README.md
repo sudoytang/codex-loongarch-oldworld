@@ -2,23 +2,24 @@
 
 Cross-compile [OpenAI Codex](https://github.com/openai/codex) (`codex-rs` / `codex-cli`) for **old-world** LoongArch64 machines: ABI 1.0, dynamic linker `/lib64/ld.so.1`, **glibc ≤ 2.28**. That is the userspace on Loongson 3A6000 systems running **Kylin Desktop V10 SP1** (kernel 5.4).
 
-GitHub Actions builds a friend-style install tarball and publishes a Release whenever you ask, and a scheduled workflow follows upstream **stable** Codex releases (not alphas / prereleases).
+GitHub Actions publishes a Release whenever you ask, and a scheduled workflow follows upstream **stable** Codex releases (not alphas / prereleases). Each Release contains only the stripped `codex` binary and a SHA256 checksum.
 
 A working binary was first produced by cross-compiling Codex **0.163.0** on an x86_64 Debian host with the toolchains and workarounds below. This repository turns that recipe into scripts you can rerun.
 
-## Install a release
+## Download a release
 
-Download `codex-loongarch-kylin-<version>.tar.xz` from [Releases](https://github.com/sudoytang/codex-loongarch-oldworld/releases):
+From [Releases](https://github.com/sudoytang/codex-loongarch-oldworld/releases), take two files:
+
+- `codex-loongarch64-oldworld-<version>` — stripped `codex-cli` binary
+- `SHA256SUMS.txt` — SHA256 of that binary only
 
 ```bash
-tar -xJf codex-loongarch-kylin-<version>.tar.xz
-cd codex-loongarch-kylin
-sudo ./install.sh
+sha256sum -c SHA256SUMS.txt
+chmod +x codex-loongarch64-oldworld-<version>
+./codex-loongarch64-oldworld-<version> --no-daemon --version
 ```
 
-`install.sh` puts the binary in `/opt/codex-loongarch/bin/codex` and a wrapper at `/usr/local/bin/codex`. The wrapper adds `--no-daemon` because this is a single binary, not Codex's "complete local package" (no background app-server). The tarball README (Chinese) covers DeepSeek configuration via `DEEPSEEK_API_KEY`, why the sandbox is off on Kylin (no `bwrap`), and uninstall.
-
-No API keys are stored in this repository or in the packaged `config.toml` template.
+This is a single binary, not Codex's "complete local package" (no background app-server). `--no-daemon` is a top-level option and must come before subcommands. There is no installer, wrapper, or default model config in the public Release; those are out of scope here. `packaging/` in this repository is only for local experiments and is not published.
 
 ## Trigger a build
 
@@ -38,7 +39,7 @@ gh workflow run build.yml -f version=0.167.0
 
 ## How the workflows work
 
-- [`build.yml`](.github/workflows/build.yml) — `workflow_dispatch` only. Installs the old-world toolchains, checks out `openai/codex` at `rust-v*`, cross-compiles `codex-cli`, verifies the ELF, packs `install.sh` / `uninstall.sh` / `codex-wrapper.sh` / README / config template, then creates or updates the matching Release. Cargo's crate registry and git db are cached; the toolchain tarballs are cached separately.
+- [`build.yml`](.github/workflows/build.yml) — `workflow_dispatch` only. Installs the old-world toolchains, checks out `openai/codex` at `rust-v*`, cross-compiles `codex-cli`, verifies the ELF, and publishes the stripped binary plus `SHA256SUMS.txt`. Cargo's crate registry and git db are cached; the toolchain tarballs are cached separately.
 - [`watch-upstream.yml`](.github/workflows/watch-upstream.yml) — daily cron (06:30 Asia/Shanghai) plus manual dispatch. Reads the latest **non-prerelease**, non-alpha `rust-vX.Y.Z` release on `openai/codex`. If this repo has no `vX.Y.Z` (or `rust-vX.Y.Z`) Release yet, it dispatches `build.yml`.
 
 A large upstream bump can break the build (new C dependencies, a Rust version Loongnix does not ship, and so on). Failures show up as failed Actions runs; they do not silently skip.
@@ -81,16 +82,17 @@ export CODEX_VERSION=0.167.0
 ./scripts/fetch-toolchains.sh
 ./scripts/build.sh
 CODEX_BIN=work/target/loongarch64-unknown-linux-gnu/release/codex ./scripts/package.sh
+# writes out/codex-loongarch64-oldworld-$CODEX_VERSION and out/SHA256SUMS.txt
 ```
 
 ## Credits
 
 - [OpenAI Codex](https://github.com/openai/codex) is the upstream project. Redistribute and use build artifacts under Codex's own license (Apache-2.0 / MIT in the upstream tree). This repository only contains build and packaging scripts (MIT).
 - Cross compilers and the old-world `rust-std` come from [Loongnix / Loongson](https://www.loongnix.cn/).
-- The packaging wrapper, DeepSeek-oriented config template, and CI scripts were written from a successful 0.163.0 cross-build, with assistance from Grok Bot.
+- The CI scripts were written from a successful 0.163.0 cross-build, with assistance from Grok Bot.
 
 ## What this does not do
 
 - It does not produce a "complete local package" (`codex-code-mode-host`, bundled `rg` / `bwrap`, and so on). Features that need the background daemon (`codex agents`, remote control) are unavailable.
-- It does not enable Codex's Linux sandbox on Kylin: there is no `bwrap`. The packaged config uses `sandbox_mode = "danger-full-access"` and optional AI auto-review instead.
+- It does not ship an installer, launcher wrapper, or ready-made model configuration. The public Release is the binary and its checksum.
 - It does not follow alpha tags. Those ship too often for a multi-hour cross compile.

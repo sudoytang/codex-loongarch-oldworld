@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assemble the friend-style install tarball around a built codex binary.
+# Stage the public release assets: the stripped Codex binary and its SHA256.
 # Usage: CODEX_VERSION=0.167.0 CODEX_BIN=... ./scripts/package.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -12,23 +12,17 @@ BIN="${CODEX_BIN:?set CODEX_BIN to the stripped codex executable}"
 "$HERE/verify-elf.sh" "$BIN"
 
 OUT="${OUT_DIR:-$ROOT/out}"
-STAGE="$OUT/codex-loongarch-kylin"
-rm -rf "$STAGE"
-mkdir -p "$STAGE/bin"
+mkdir -p "$OUT"
+NAME="codex-loongarch64-oldworld-${CODEX_VERSION}"
+DEST="$OUT/$NAME"
 
-install -m 755 "$BIN" "$STAGE/bin/codex"
-install -m 755 "$ROOT/packaging/bin/codex-wrapper.sh" "$STAGE/bin/codex-wrapper.sh"
-install -m 755 "$ROOT/packaging/install.sh" "$STAGE/install.sh"
-install -m 755 "$ROOT/packaging/uninstall.sh" "$STAGE/uninstall.sh"
+# Drop any previous public assets (including the old friend tarball if present).
+rm -f "$DEST" "$OUT/SHA256SUMS.txt" \
+  "$OUT/codex-loongarch-kylin-${CODEX_VERSION}.tar.xz"
+rm -rf "$OUT/codex-loongarch-kylin"
 
-sed "s/__CODEX_VERSION__/${CODEX_VERSION}/g" \
-  "$ROOT/packaging/README.txt" > "$STAGE/README.txt"
-sed "s/__CODEX_VERSION__/${CODEX_VERSION}/g" \
-  "$ROOT/packaging/config.toml.template" > "$STAGE/config.toml.template"
-
-TAR="$OUT/codex-loongarch-kylin-${CODEX_VERSION}.tar.xz"
-tar -C "$OUT" -cJf "$TAR" codex-loongarch-kylin
-( cd "$OUT" && sha256sum "$(basename "$TAR")" > SHA256SUMS.txt )
-ls -lh "$TAR"
+install -m 755 "$BIN" "$DEST"
+( cd "$OUT" && sha256sum "$NAME" > SHA256SUMS.txt )
+ls -lh "$DEST"
 cat "$OUT/SHA256SUMS.txt"
-echo "PACKAGE_OK $TAR"
+echo "PACKAGE_OK $DEST"
