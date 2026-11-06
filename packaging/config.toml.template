@@ -1,0 +1,22 @@
+# Codex CLI __CODEX_VERSION__ + DeepSeek (old-world loongarch64 build)
+# The API key is NOT stored here. Codex reads it from the DEEPSEEK_API_KEY
+# environment variable (see README.txt).
+
+model = "deepseek-flash"          # or "deepseek-v4-pro"
+model_provider = "deepseek"
+
+# Kylin V10 SP1 has no bubblewrap (bwrap), so Codex's Linux sandbox cannot
+# start. Run commands without a sandbox, with your normal user permissions.
+# Ordinary commands run directly; commands Codex flags as dangerous are sent
+# to an AI reviewer (auto_review) that approves or denies them instead of
+# asking you. For no review at all, replace the next two lines with
+# approval_policy = "never" (dangerous commands are then refused).
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com"
+env_key = "DEEPSEEK_API_KEY"
+wire_api = "responses"

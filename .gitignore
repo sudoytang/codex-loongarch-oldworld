@@ -1,0 +1,10 @@
+/work/
+/out/
+/.cache/
+/toolchains/
+target/
+**/*.tar.xz
+**/*.tar.gz
+!packaging/**
+*.deb
+.DS_Store

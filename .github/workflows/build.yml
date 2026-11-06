@@ -1,0 +1,137 @@
+name: Build old-world LoongArch Codex
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Codex version (0.167.0, v0.167.0, or rust-v0.167.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Normalize version
+        id: ver
+        run: |
+          set -euo pipefail
+          source scripts/versions.sh
+          v="$(normalize_codex_version "${{ inputs.version }}")"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=rust-v${v}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v${v}" >> "$GITHUB_OUTPUT"
+          echo "Building Codex $v (upstream tag rust-v${v})"
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake perl pkg-config curl xz-utils \
+            binutils git ca-certificates
+
+      - name: Cache downloaded toolchains
+        uses: actions/cache@v4
+        with:
+          path: .cache/toolchains
+          key: toolchains-gcc8.3-rc1.6-rust1.99.0-2026-10-09-ossl1.1.1d-lnd.13
+
+      - name: Fetch old-world toolchains
+        run: ./scripts/fetch-toolchains.sh
+
+      - name: Checkout openai/codex
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: ${{ steps.ver.outputs.tag }}
+          path: work/codex
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ steps.ver.outputs.version }}-${{ hashFiles('work/codex/codex-rs/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ steps.ver.outputs.version }}-
+            cargo-${{ runner.os }}-
+
+      - name: Cross-compile codex-cli
+        env:
+          CODEX_VERSION: ${{ steps.ver.outputs.version }}
+          CODEX_SRC: ${{ github.workspace }}/work/codex/codex-rs
+          CARGO_TARGET_DIR: ${{ github.workspace }}/work/target
+          JOBS: "2"
+        run: ./scripts/build.sh
+
+      - name: Package install tarball
+        env:
+          CODEX_VERSION: ${{ steps.ver.outputs.version }}
+          CODEX_BIN: ${{ github.workspace }}/work/target/loongarch64-unknown-linux-gnu/release/codex
+        run: ./scripts/package.sh
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-loongarch-kylin-${{ steps.ver.outputs.version }}
+          path: |
+            out/codex-loongarch-kylin-${{ steps.ver.outputs.version }}.tar.xz
+            out/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.release_tag }}
+          VER: ${{ steps.ver.outputs.version }}
+          UT: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes="$(cat <<EOF
+          Cross-compiled OpenAI Codex CLI ${VER} for old-world LoongArch.
+
+          - Upstream tag: [${UT}](https://github.com/openai/codex/releases/tag/${UT})
+          - Target: loongarch64-unknown-linux-gnu, ABI 1.0
+          - Dynamic linker: \`/lib64/ld.so.1\`
+          - Maximum GLIBC symbol: 2.28 (Kylin Desktop V10 SP1)
+          - Single binary plus a wrapper that adds \`--no-daemon\`
+
+          ## Install
+
+          \`\`\`bash
+          tar -xJf codex-loongarch-kylin-${VER}.tar.xz
+          cd codex-loongarch-kylin
+          sudo ./install.sh
+          \`\`\`
+
+          See the tarball README (Chinese) for DeepSeek config, sandbox notes, and uninstall.
+          This build does not bundle any API keys.
+          EOF
+          )"
+          assets=(
+            "out/codex-loongarch-kylin-${VER}.tar.xz"
+            "out/SHA256SUMS.txt"
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading assets"
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --title "Codex ${VER} for old-world LoongArch" \
+              --notes "$notes"
+          fi
