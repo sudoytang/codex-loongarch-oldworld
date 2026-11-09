@@ -14,30 +14,11 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
       - name: Find latest stable rust release and dispatch a build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          latest="$(gh api "repos/openai/codex/releases?per_page=50" --jq '
-            [.[]
-              | select(.draft == false and .prerelease == false)
-              | select((.tag_name | ascii_downcase) | (contains("alpha") or contains("beta") or contains("rc") or contains("preview")) | not)
-              | select(.tag_name | test("^rust-v[0-9]+\\.[0-9]+\\.[0-9]+$"))
-              | .tag_name
-            ][0] // empty
-          ')"
-          if [ -z "$latest" ]; then
-            echo "No stable rust-vX.Y.Z release found on openai/codex"
-            exit 0
-          fi
-          ver="${latest#rust-v}"
-          echo "Latest stable upstream: $latest (version $ver)"
-          if gh release view "v${ver}" --repo "$REPO" >/dev/null 2>&1 \
-            || gh release view "$latest" --repo "$REPO" >/dev/null 2>&1; then
-            echo "This repository already has a release for $ver; not building."
-            exit 0
-          fi
-          echo "No matching release here; dispatching build.yml for $ver"
-          gh workflow run build.yml --repo "$REPO" --ref main -f version="$ver"
+        run: ./scripts/watch-upstream.sh
